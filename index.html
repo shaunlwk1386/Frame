@@ -950,7 +950,7 @@
     let state = { projects: {}, order: [], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, crossLinkFrom = null, dirty = false;
     let projectTabPage = 0;
     let historyStack = [], historyIndex = -1;
-    let dragMode = null, dragStart = null, dragNodeId = null, dragStartMap = null, justFinishedMarquee = false, panStart = null;
+    let dragMode = null, dragStart = null, dragNodeId = null, dragStartMap = null, justFinishedMarquee = false, panStart = null, isSpaceDown = false;
 
     function activeProject() { return state.projects[state.activeProjectId] }
     function activePage() { const p = activeProject(); return p ? p.pages[p.activePageIndex || 0] : null }
