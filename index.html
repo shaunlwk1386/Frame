@@ -742,6 +742,30 @@
       cursor: default
     }
 
+    .folder-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #888;
+      padding: 10px 0 4px;
+      user-select: none
+    }
+    .folder-header:first-child { padding-top: 2px }
+    .folder-count { font-weight: 400; color: #bbb }
+    .folder-header .new-in-folder {
+      all: unset;
+      cursor: pointer;
+      font-size: 16px;
+      color: #bbb;
+      line-height: 1;
+      padding: 0 3px
+    }
+    .folder-header .new-in-folder:hover { color: var(--accent) }
+
     kbd {
       display: inline-block;
       padding: 2px 6px;
@@ -841,9 +865,7 @@
         <button id="sidebarToggle" title="Toggle Sidebar">⟨</button>
         <div id="sidebarContent">
           <div class="sidebar-section" id="projectsSection">
-            <h3>Projects</h3>
             <div id="tabs"></div>
-            <button class="btn" id="newProjectBtn" style="background:#000;color:#fff;border:none">+ New Project</button>
           </div>
           <div class="sidebar-section" id="currentProjectSection">
             <h3>Current Project</h3>
@@ -933,7 +955,7 @@
         id="applyTemplateBtn">Apply</button></div>
   </dialog>
   <script>
-    const MAX_PROJECTS = 12, PROJECTS_PER_PAGE = 6, STORAGE_KEY = 'mindmap_v20_state';
+    const WORK_MAX = 20, STORAGE_KEY = 'mindmap_v20_state';
     const templates = {
       blank: { name: 'Blank', description: 'Start from scratch.', build: () => ({ nodes: [makeNode('Main Topic', 320, 240)], links: [] }) },
       version: {
@@ -963,8 +985,8 @@
     function makeNode(title, x, y) { return { id: uid(), title, x, y, w: 120, h: 54, theme: 'neutral', themeIntensity: null, shape: 'oval', fontSize: 12, fontColor: null, textAlign: 'center', details: '', detailsOpen: false, detailsWidth: 170, detailsHeight: 132 } }
     function linked(rootTitle, items) { const root = makeNode(rootTitle, 220, 180), nodes = [root], links = []; items.forEach((t, i) => { const n = makeNode(t, 500 + (i % 2) * 140, 90 + i * 86); nodes.push(n); links.push({ id: uid(), from: root.id, to: n.id }) }); return { nodes, links } }
     const els = { tabs: document.getElementById('tabs'), pageTabs: document.getElementById('pageTabs'), nodes: document.getElementById('nodes'), links: document.getElementById('links'), canvas: document.getElementById('canvas'), map: document.getElementById('map'), selectionBox: document.getElementById('selectionBox'), saveState: document.getElementById('saveState'), fileInput: document.getElementById('fileInput'), measurer: document.getElementById('measurer') };
-    let state = { projects: {}, order: [], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, crossLinkFrom = null, dirty = false;
-    let projectTabPage = 0;
+    let state = { projects: {}, folders: [{ id: 'work', name: 'Work', order: [], max: WORK_MAX }, { id: 'projects', name: 'Projects', order: [], max: null }], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, crossLinkFrom = null, dirty = false;
+    function allProjectIds() { return state.folders.flatMap(f => f.order) }
     let historyStack = [], historyIndex = -1;
     let dragMode = null, dragStart = null, dragNodeId = null, dragStartMap = null, justFinishedMarquee = false, panStart = null, isSpaceDown = false;
 
@@ -984,6 +1006,14 @@
       if (d.viewX == null) d.viewX = 0;
       if (d.viewY == null) d.viewY = 0;
       if (d.sidebarCollapsed == null) d.sidebarCollapsed = false;
+
+      if (!d.folders) {
+        d.folders = [
+          { id: 'work', name: 'Work', order: [], max: WORK_MAX },
+          { id: 'projects', name: 'Projects', order: (d.order || []).slice(), max: null }
+        ];
+      }
+      d.folders.forEach(f => { if (f.max === undefined) f.max = null; });
 
       Object.values(d.projects || {}).forEach(p => {
         if (!p.pages) {
@@ -1010,14 +1040,15 @@
 
       if (state.sidebarCollapsed) document.body.classList.add('sidebar-collapsed');
 
-      if (!state.order.length) createProject('Project 1', 'blank');
+      if (!allProjectIds().length) createProject('Project 1', 'blank');
       else pushHistory();
     }
 
     window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = '' } })
 
-    function createProject(name, templateKey = 'blank') {
-      if (state.order.length >= MAX_PROJECTS) { alert('Max 12 projects.'); return }
+    function createProject(name, templateKey = 'blank', folderId) {
+      const folder = state.folders.find(f => f.id === folderId) || state.folders.find(f => f.id === 'projects') || state.folders[0];
+      if (folder.max !== null && folder.order.length >= folder.max) { alert(`Max ${folder.max} projects in "${folder.name}".`); return }
       const built = templates[templateKey].build(), id = uid();
       state.projects[id] = {
         id,
@@ -1025,9 +1056,8 @@
         pages: [{ name: 'Main', nodes: built.nodes, links: built.links, insertedTemplateIds: [] }],
         activePageIndex: 0
       };
-      state.order.push(id);
+      folder.order.push(id);
       state.activeProjectId = id;
-      projectTabPage = Math.floor((state.order.length - 1) / PROJECTS_PER_PAGE);
       selectedIds = new Set();
       selectedNodeId = null;
       pushHistory();
@@ -1037,49 +1067,49 @@
 
     function renderTabs() {
       els.tabs.innerHTML = '';
-      const totalPages = Math.ceil(state.order.length / PROJECTS_PER_PAGE) || 1;
-      if (projectTabPage >= totalPages) projectTabPage = totalPages - 1;
-      const pageIds = state.order.slice(projectTabPage * PROJECTS_PER_PAGE, (projectTabPage + 1) * PROJECTS_PER_PAGE);
-      pageIds.forEach(id => {
-        const p = state.projects[id], tab = document.createElement('div');
-        tab.className = 'tab' + (id === state.activeProjectId ? ' active' : '');
-        tab.innerHTML = `<span>${escapeHtml(p.name)}</span><button title="Rename">✎</button><button title="Delete">×</button>`;
-        tab.addEventListener('click', e => {
-          if (e.target.tagName === 'BUTTON') return;
-          state.activeProjectId = id;
-          selectedIds = new Set();
-          selectedNodeId = null;
-          saveLocal();
-          renderAll()
+      state.folders.forEach(folder => {
+        const header = document.createElement('div');
+        header.className = 'folder-header';
+        const countLabel = folder.max !== null ? `${folder.order.length}/${folder.max}` : `${folder.order.length}`;
+        header.innerHTML = `<span>${escapeHtml(folder.name)} <span class="folder-count">${countLabel}</span></span><button class="new-in-folder" title="New project in ${escapeHtml(folder.name)}">+</button>`;
+        header.querySelector('button').onclick = () => openTemplateDialog(true, folder.id);
+        els.tabs.appendChild(header);
+        folder.order.forEach(id => {
+          const p = state.projects[id];
+          if (!p) return;
+          const tab = document.createElement('div');
+          tab.className = 'tab' + (id === state.activeProjectId ? ' active' : '');
+          tab.innerHTML = `<span>${escapeHtml(p.name)}</span><button title="Rename">✎</button><button title="Delete">×</button>`;
+          tab.addEventListener('click', e => {
+            if (e.target.tagName === 'BUTTON') return;
+            state.activeProjectId = id;
+            selectedIds = new Set();
+            selectedNodeId = null;
+            saveLocal();
+            renderAll()
+          });
+          tab.querySelectorAll('button')[0].onclick = (e) => {
+            e.stopPropagation();
+            const v = prompt('Rename project', p.name);
+            if (v && v.trim()) { p.name = v.trim(); markDirty(); saveLocal(); renderTabs() }
+          };
+          tab.querySelectorAll('button')[1].onclick = (e) => {
+            e.stopPropagation();
+            if (!confirm(`Delete "${p.name}"?`)) return;
+            delete state.projects[id];
+            folder.order = folder.order.filter(x => x !== id);
+            const remaining = allProjectIds();
+            if (!remaining.length) createProject('Project 1', 'blank');
+            else { state.activeProjectId = remaining[0]; }
+            selectedIds = new Set();
+            selectedNodeId = null;
+            pushHistory();
+            saveLocal();
+            renderAll()
+          };
+          els.tabs.appendChild(tab);
         });
-        tab.querySelectorAll('button')[0].onclick = (e) => {
-          e.stopPropagation();
-          const v = prompt('Rename project', p.name);
-          if (v && v.trim()) { p.name = v.trim(); markDirty(); saveLocal(); renderTabs() }
-        };
-        tab.querySelectorAll('button')[1].onclick = (e) => {
-          e.stopPropagation();
-          if (!confirm(`Delete "${p.name}"?`)) return;
-          delete state.projects[id];
-          state.order = state.order.filter(x => x !== id);
-          if (!state.order.length) createProject('Project 1', 'blank');
-          else { state.activeProjectId = state.order[0]; projectTabPage = 0; }
-          selectedIds = new Set();
-          selectedNodeId = null;
-          pushHistory();
-          saveLocal();
-          renderAll()
-        };
-        els.tabs.appendChild(tab)
       });
-      if (totalPages > 1) {
-        const pager = document.createElement('div');
-        pager.className = 'tab-pagination';
-        pager.innerHTML = `<button ${projectTabPage === 0 ? 'disabled' : ''}>&#8249;</button><span>${projectTabPage + 1} / ${totalPages}</span><button ${projectTabPage >= totalPages - 1 ? 'disabled' : ''}>&#8250;</button>`;
-        pager.querySelectorAll('button')[0].onclick = () => { projectTabPage--; renderTabs() };
-        pager.querySelectorAll('button')[1].onclick = () => { projectTabPage++; renderTabs() };
-        els.tabs.appendChild(pager);
-      }
       renderPageTabs();
     }
 
@@ -1295,6 +1325,26 @@
         panStart = { x: e.clientX, y: e.clientY, vx: state.viewX || 0, vy: state.viewY || 0 };
         e.preventDefault();
         return;
+      }
+      if (e.metaKey || e.ctrlKey) { zoomReset(); e.preventDefault(); return; }
+      if (e.altKey) {
+        if (preZoomState) {
+          const from = { scale: state.canvasScale || 1, viewX: state.viewX || 0, viewY: state.viewY || 0 };
+          const to = preZoomState;
+          preZoomState = null;
+          const duration = 300, start = performance.now();
+          function ease(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t }
+          function step(now) {
+            const t = Math.min((now - start) / duration, 1), e2 = ease(t);
+            state.canvasScale = from.scale + (to.scale - from.scale) * e2;
+            state.viewX = from.viewX + (to.viewX - from.viewX) * e2;
+            state.viewY = from.viewY + (to.viewY - from.viewY) * e2;
+            renderCanvas();
+            if (t < 1) requestAnimationFrame(step);
+          }
+          requestAnimationFrame(step);
+        }
+        e.preventDefault(); return;
       }
       if (e.shiftKey) {
         dragMode = 'marquee';
@@ -1512,11 +1562,13 @@
     }
 
     function zoomIn() { state.canvasScale = Math.min(3.0, (state.canvasScale || 1) + 0.1); renderCanvas() }
+    let preZoomState = null;
     function zoomToNode(node) {
       const targetScale = 1.5;
       const canvasW = els.canvas.clientWidth, canvasH = els.canvas.clientHeight;
       const nodeCX = node.x + node.w / 2, nodeCY = node.y + node.h / 2;
       const startScale = state.canvasScale || 1;
+      preZoomState = { scale: startScale, viewX: state.viewX || 0, viewY: state.viewY || 0 };
       const startVX = state.viewX || 0, startVY = state.viewY || 0;
       const endVX = canvasW / 2 - nodeCX * targetScale;
       const endVY = canvasH / 2 - nodeCY * targetScale;
@@ -1556,7 +1608,6 @@
       renderCanvas();
       renderSidebar();
 
-      document.getElementById('newProjectBtn').onclick = () => openTemplateDialog(true);
       document.getElementById('newPageBtn').onmousedown = addPage;
       document.getElementById('freeNodeBtn').onmousedown = addFreeNode;
       document.getElementById('insertTemplateBtn').onclick = () => openTemplateDialog(false);
@@ -1588,13 +1639,13 @@
       }
     }
 
-    let templateModeNew = true, selectedTemplate = 'blank';
-    function openTemplateDialog(isNew) { templateModeNew = isNew; const list = document.getElementById('templateList'); list.innerHTML = ''; Object.entries(templates).forEach(([key, t]) => { const item = document.createElement('div'); item.className = 'template-item' + (key === selectedTemplate ? ' active' : ''); item.innerHTML = `<div style="font-weight:800">${t.name}</div><div class="hint" style="margin-top:4px">${t.description}</div>`; item.onclick = () => { selectedTemplate = key;[...list.children].forEach(x => x.classList.remove('active')); item.classList.add('active') }; list.appendChild(item) }); document.getElementById('templateDialog').showModal() }
+    let templateModeNew = true, selectedTemplate = 'blank', templateFolderId = null;
+    function openTemplateDialog(isNew, folderId = null) { templateModeNew = isNew; templateFolderId = folderId; const list = document.getElementById('templateList'); list.innerHTML = ''; Object.entries(templates).forEach(([key, t]) => { const item = document.createElement('div'); item.className = 'template-item' + (key === selectedTemplate ? ' active' : ''); item.innerHTML = `<div style="font-weight:800">${t.name}</div><div class="hint" style="margin-top:4px">${t.description}</div>`; item.onclick = () => { selectedTemplate = key;[...list.children].forEach(x => x.classList.remove('active')); item.classList.add('active') }; list.appendChild(item) }); document.getElementById('templateDialog').showModal() }
 
     function applyTemplate() {
       if (templateModeNew) {
-        const name = prompt('Project name', `Project ${state.order.length + 1}`) || `Project ${state.order.length + 1}`;
-        createProject(name.trim(), selectedTemplate);
+        const name = prompt('Project name', `Project ${allProjectIds().length + 1}`) || `Project ${allProjectIds().length + 1}`;
+        createProject(name.trim(), selectedTemplate, templateFolderId);
       } else {
         const page = activePage(), old = new Set(page.insertedTemplateIds || []);
         page.nodes = page.nodes.filter(n => !old.has(n.id));
