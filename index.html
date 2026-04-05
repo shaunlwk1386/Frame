@@ -207,7 +207,7 @@
     #links {
       position: absolute;
       inset: 0;
-      pointer-events: none
+      overflow: visible
     }
 
     #nodes {
@@ -985,7 +985,7 @@
     function makeNode(title, x, y) { return { id: uid(), title, x, y, w: 120, h: 54, theme: 'neutral', themeIntensity: null, shape: 'oval', fontSize: 12, fontColor: null, textAlign: 'center', details: '', detailsOpen: false, detailsWidth: 170, detailsHeight: 132 } }
     function linked(rootTitle, items) { const root = makeNode(rootTitle, 220, 180), nodes = [root], links = []; items.forEach((t, i) => { const n = makeNode(t, 500 + (i % 2) * 140, 90 + i * 86); nodes.push(n); links.push({ id: uid(), from: root.id, to: n.id }) }); return { nodes, links } }
     const els = { tabs: document.getElementById('tabs'), pageTabs: document.getElementById('pageTabs'), nodes: document.getElementById('nodes'), links: document.getElementById('links'), canvas: document.getElementById('canvas'), map: document.getElementById('map'), selectionBox: document.getElementById('selectionBox'), saveState: document.getElementById('saveState'), fileInput: document.getElementById('fileInput'), measurer: document.getElementById('measurer') };
-    let state = { projects: {}, folders: [{ id: 'work', name: 'Work', order: [], max: WORK_MAX }, { id: 'projects', name: 'Projects', order: [], max: null }], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, crossLinkFrom = null, dirty = false;
+    let state = { projects: {}, folders: [{ id: 'work', name: 'Work', order: [], max: WORK_MAX }, { id: 'projects', name: 'Projects', order: [], max: null }], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, selectedLinkId = null, crossLinkFrom = null, dirty = false;
     function allProjectIds() { return state.folders.flatMap(f => f.order) }
     let historyStack = [], historyIndex = -1;
     let dragMode = null, dragStart = null, dragNodeId = null, dragStartMap = null, justFinishedMarquee = false, panStart = null, isSpaceDown = false;
@@ -1212,15 +1212,31 @@
       page.links.forEach(link => {
         const a = page.nodes.find(n => n.id === link.from), b = page.nodes.find(n => n.id === link.to);
         if (!a || !b) return;
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         const anchors = getSmartAnchors(a, b);
-        const start = anchors.s, end = anchors.e;
-        const d = generateSmartPath(start, end, page.nodes.filter(n => n.id !== a.id && n.id !== b.id));
+        const d = generateSmartPath(anchors.s, anchors.e, page.nodes.filter(n => n.id !== a.id && n.id !== b.id));
+        const isSelected = link.id === selectedLinkId;
+
+        const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        hit.setAttribute('d', d);
+        hit.setAttribute('stroke', 'transparent');
+        hit.setAttribute('stroke-width', '12');
+        hit.setAttribute('fill', 'none');
+        hit.style.cursor = 'pointer';
+        hit.addEventListener('click', e => {
+          e.stopPropagation();
+          selectedLinkId = isSelected ? null : link.id;
+          selectedNodeId = null; selectedIds = new Set();
+          renderCanvas(); renderSidebar();
+        });
+        els.links.appendChild(hit);
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', d);
-        path.setAttribute('stroke', '#888');
-        path.setAttribute('stroke-width', link.thickness || 1.5);
+        path.setAttribute('stroke', isSelected ? '#007aff' : '#888');
+        path.setAttribute('stroke-width', isSelected ? (link.thickness || 1.5) + 1 : link.thickness || 1.5);
         path.setAttribute('fill', 'none');
-        els.links.appendChild(path)
+        path.setAttribute('pointer-events', 'none');
+        els.links.appendChild(path);
       });
 
       page.nodes.forEach(node => {
@@ -1437,7 +1453,7 @@
       dragNodeId = null;
       dragStartMap = null
     });
-    document.addEventListener('click', e => { if (justFinishedMarquee) return; if (e.target.closest('.node') || e.target.closest('#sidebar') || e.target.closest('#toolbar') || e.target.closest('#pageToolbar')) return; selectedIds = new Set(); selectedNodeId = null; renderSidebar(); highlightSelection() });
+    document.addEventListener('click', e => { if (justFinishedMarquee) return; if (e.target.closest('#sidebar') || e.target.closest('#toolbar') || e.target.closest('#pageToolbar')) return; if (e.target.closest('.node')) { if (selectedLinkId) { selectedLinkId = null; renderCanvas() } return; } selectedIds = new Set(); selectedNodeId = null; selectedLinkId = null; renderSidebar(); highlightSelection() });
 
     function getSelectedNodes() { const ids = selectedIds.size ? selectedIds : (selectedNodeId ? new Set([selectedNodeId]) : new Set()); return activePage().nodes.filter(n => ids.has(n.id)) }
     function selectOnly(id) { selectedNodeId = id; selectedIds = new Set([id]); renderSidebar(); highlightSelection() }
@@ -1545,7 +1561,11 @@
         if (el) { const t = el.querySelector('.title'); selectOnly(child.id); t.contentEditable = 'true'; el.classList.add('editing'); t.focus(); }
       }, 100);
     }
-    function deleteSelected() { const ids = selectedIds.size ? new Set(selectedIds) : (selectedNodeId ? new Set([selectedNodeId]) : new Set()); if (!ids.size) return; const page = activePage(); page.nodes = page.nodes.filter(n => !ids.has(n.id)); page.links = page.links.filter(l => !ids.has(l.from) && !ids.has(l.to)); if (!page.nodes.length) page.nodes.push(makeNode('Main Topic', 220, 180)); selectedIds = new Set(); selectedNodeId = null; pushHistory(); markDirty(); renderAll() }
+    function deleteSelected() {
+      const page = activePage();
+      if (selectedLinkId) { page.links = page.links.filter(l => l.id !== selectedLinkId); selectedLinkId = null; pushHistory(); markDirty(); renderAll(); return; }
+      const ids = selectedIds.size ? new Set(selectedIds) : (selectedNodeId ? new Set([selectedNodeId]) : new Set()); if (!ids.size) return; page.nodes = page.nodes.filter(n => !ids.has(n.id)); page.links = page.links.filter(l => !ids.has(l.from) && !ids.has(l.to)); if (!page.nodes.length) page.nodes.push(makeNode('Main Topic', 220, 180)); selectedIds = new Set(); selectedNodeId = null; pushHistory(); markDirty(); renderAll()
+    }
     function startCrossLink(id) { if (crossLinkFrom === id) { crossLinkFrom = null; els.saveState.textContent = 'Saved locally'; return } crossLinkFrom = id; els.saveState.textContent = 'Select another node to link' }
     function makeCrossLink(from, to) { const page = activePage(); const idx = page.links.findIndex(l => (l.from === from && l.to === to) || (l.from === to && l.to === from)); if (idx >= 0) page.links.splice(idx, 1); else page.links.push({ id: uid(), from, to }); crossLinkFrom = null; pushHistory(); markDirty(); renderAll() }
     function linkSelectedChain() { const page = activePage(), arr = getSelectedNodes(); if (arr.length < 2) return; const sorted = [...arr].sort((a, b) => (a.x - b.x) || (a.y - b.y)); let allExist = true; for (let i = 0; i < sorted.length - 1; i++) { const from = sorted[i].id, to = sorted[i + 1].id; if (!page.links.some(l => (l.from === from && l.to === to) || (l.from === to && l.to === from))) { allExist = false; break } } for (let i = 0; i < sorted.length - 1; i++) { const from = sorted[i].id, to = sorted[i + 1].id; const idx = page.links.findIndex(l => (l.from === from && l.to === to) || (l.from === to && l.to === from)); if (allExist) { if (idx >= 0) page.links.splice(idx, 1) } else { if (idx < 0) page.links.push({ id: uid(), from, to }) } } pushHistory(); markDirty(); renderAll() }
