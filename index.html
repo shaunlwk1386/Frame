@@ -184,11 +184,10 @@
       right: var(--sidebar-w);
       background: #fdfdfd;
       overflow: hidden;
-      cursor: grab;
       transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1)
     }
 
-    #canvas:active {
+    #canvas.panning {
       cursor: grabbing
     }
 
@@ -936,12 +935,29 @@
   <script>
     const MAX_PROJECTS = 12, PROJECTS_PER_PAGE = 6, STORAGE_KEY = 'mindmap_v20_state';
     const templates = {
-      blank: { name: 'Blank', description: 'Start from scratch.', build: () => ({ nodes: [makeNode('Main Topic', 220, 180)], links: [] }) },
-      client: { name: 'Client Research', description: 'Strong first-meeting research scaffold.', build: () => linked('Client / Brand', ['Business Model', 'Growth Priorities', 'Decision Makers', 'Pain Points', 'Opportunities', 'Likely Objections', 'Opening Angle', 'Questions to Ask']) },
-      app: { name: 'App / Feature Plan', description: 'Product and UI/UX planning scaffold.', build: () => linked('Feature / App', ['User Problem', 'Desired Outcome', 'Current UX Issues', 'UI Changes', 'Logic Needed', 'Edge Cases', 'MVP Version', 'Future Improvements']) },
-      lesson: { name: 'Lesson Plan', description: 'Outcome-first teaching scaffold.', build: () => linked('Lesson Topic', ['Objective', 'Core Concepts', 'Why It Matters', 'Examples', 'Exercise', 'Common Mistakes', 'Reflection', 'Next Step']) },
-      deck: { name: 'Deck Plan', description: 'Narrative and slide structure scaffold.', build: () => linked('Deck', ['Goal', 'Audience', 'Core Narrative', 'Proof Points', 'Slide Sequence', 'Closing Ask']) },
-      convo: { name: 'Conversation Plan', description: 'Meeting flow scaffold.', build: () => linked('Conversation', ['Objective', 'What They Care About', 'Opening', 'Questions', 'Objections', 'Responses', 'Desired Outcome']) }
+      blank: { name: 'Blank', description: 'Start from scratch.', build: () => ({ nodes: [makeNode('Main Topic', 320, 240)], links: [] }) },
+      version: {
+        name: 'New Version Planning',
+        description: 'Plan a new version — ideas, bugs, and removals.',
+        build: () => {
+          const main = makeNode('v?.?', 320, 240);
+          const newIdeas = makeNode('New Ideas', 620, 120);
+          const bugs = makeNode('Bugs', 620, 240);
+          const removals = makeNode('Removals', 620, 360);
+          const uiux = makeNode('UI / UX', 900, 80);
+          const features = makeNode('New Features', 900, 180);
+          return {
+            nodes: [main, newIdeas, bugs, removals, uiux, features],
+            links: [
+              { id: uid(), from: main.id, to: newIdeas.id },
+              { id: uid(), from: main.id, to: bugs.id },
+              { id: uid(), from: main.id, to: removals.id },
+              { id: uid(), from: newIdeas.id, to: uiux.id },
+              { id: uid(), from: newIdeas.id, to: features.id }
+            ]
+          }
+        }
+      }
     };
     function uid() { return Math.random().toString(36).slice(2, 10) }
     function makeNode(title, x, y) { return { id: uid(), title, x, y, w: 120, h: 54, theme: 'neutral', themeIntensity: null, shape: 'oval', fontSize: 12, fontColor: null, textAlign: 'center', details: '', detailsOpen: false, detailsWidth: 170, detailsHeight: 132 } }
@@ -1200,7 +1216,7 @@
         title.style.justifyContent = (node.textAlign === 'left' ? 'flex-start' : node.textAlign === 'right' ? 'flex-end' : 'center');
         title.contentEditable = 'false';
 
-        title.onclick = (e) => { e.stopPropagation(); if (e.metaKey || e.ctrlKey || e.shiftKey) { toggleMulti(node.id); } else { selectOnly(node.id); } };
+        title.onclick = (e) => { e.stopPropagation(); if (e.altKey) { selectOnly(node.id); zoomToNode(node); } else if (e.shiftKey || e.metaKey || e.ctrlKey) { toggleMulti(node.id); } else { selectOnly(node.id); } };
         title.ondblclick = (e) => { e.stopPropagation(); selectOnly(node.id); title.contentEditable = 'true'; el.classList.add('editing'); title.focus() };
         title.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') { document.execCommand('insertLineBreak'); e.preventDefault(); } };
         title.onblur = () => { title.contentEditable = 'false'; el.classList.remove('editing'); node.title = title.innerText.replace(/\n+$/, ''); autoSizeNode(node); pushHistory(); markDirty(); renderCanvas() };
@@ -1273,6 +1289,13 @@
 
     els.canvas.onmousedown = (e) => {
       if (e.target.closest('.node') || e.target.closest('#sidebar') || e.target.closest('#toolbar') || e.target.closest('#floatingZoom') || e.target.closest('#sidebarToggle')) return;
+      if (e.button === 1) {
+        dragMode = 'pan';
+        document.body.style.cursor = 'grabbing';
+        panStart = { x: e.clientX, y: e.clientY, vx: state.viewX || 0, vy: state.viewY || 0 };
+        e.preventDefault();
+        return;
+      }
       if (e.shiftKey) {
         dragMode = 'marquee';
         const p = pointInCanvas(e);
@@ -1288,14 +1311,19 @@
         e.preventDefault();
         return;
       }
-      dragMode = 'pan';
-      document.body.style.cursor = 'grabbing';
+      dragMode = 'pending-pan';
       panStart = { x: e.clientX, y: e.clientY, vx: state.viewX || 0, vy: state.viewY || 0 };
-      e.preventDefault()
     };
 
     window.addEventListener('mousemove', e => {
       if (!dragMode) return;
+      if (dragMode === 'pending-pan') {
+        if (Math.abs(e.clientX - panStart.x) > 4 || Math.abs(e.clientY - panStart.y) > 4) {
+          dragMode = 'pan';
+          document.body.style.cursor = 'grabbing';
+        }
+        return;
+      }
       if (dragMode === 'pan') {
         state.viewX = panStart.vx + (e.clientX - panStart.x);
         state.viewY = panStart.vy + (e.clientY - panStart.y);
@@ -1341,6 +1369,10 @@
     window.addEventListener('mouseup', () => {
       if (!dragMode) return;
       document.body.style.cursor = '';
+      if (dragMode === 'pending-pan') {
+        dragMode = null; dragStart = null; dragNodeId = null; dragStartMap = null;
+        return;
+      }
       if (dragMode === 'marquee') {
         els.selectionBox.style.display = 'none';
         renderSidebar();
@@ -1480,6 +1512,26 @@
     }
 
     function zoomIn() { state.canvasScale = Math.min(3.0, (state.canvasScale || 1) + 0.1); renderCanvas() }
+    function zoomToNode(node) {
+      const targetScale = 1.5;
+      const canvasW = els.canvas.clientWidth, canvasH = els.canvas.clientHeight;
+      const nodeCX = node.x + node.w / 2, nodeCY = node.y + node.h / 2;
+      const startScale = state.canvasScale || 1;
+      const startVX = state.viewX || 0, startVY = state.viewY || 0;
+      const endVX = canvasW / 2 - nodeCX * targetScale;
+      const endVY = canvasH / 2 - nodeCY * targetScale;
+      const duration = 300, start = performance.now();
+      function ease(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t }
+      function step(now) {
+        const t = Math.min((now - start) / duration, 1), e = ease(t);
+        state.canvasScale = startScale + (targetScale - startScale) * e;
+        state.viewX = startVX + (endVX - startVX) * e;
+        state.viewY = startVY + (endVY - startVY) * e;
+        renderCanvas();
+        if (t < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
     function zoomOut() { state.canvasScale = Math.max(0.2, (state.canvasScale || 1) - 0.1); renderCanvas() }
     function zoomReset() { state.canvasScale = 1; state.viewX = 0; state.viewY = 0; renderCanvas() }
 
@@ -1567,12 +1619,17 @@
 
     document.addEventListener('keydown', e => {
       const editing = document.activeElement && (document.activeElement.contentEditable === 'true' || document.activeElement.tagName === 'TEXTAREA');
+      if (e.code === 'Space' && !editing) { isSpaceDown = true; document.body.classList.add('space-pan'); e.preventDefault(); return }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return }
       const page = activePage(); if (!page) return;
       const selected = page.nodes.find(n => n.id === selectedNodeId); if (!selected) return;
       if (!editing && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteSelected() }
       else if (!editing && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addChild(selected.id, 1) }
       else if (!editing && e.key === 'Enter' && e.shiftKey) { e.preventDefault(); addChild(selected.id, -1) }
+    });
+
+    document.addEventListener('keyup', e => {
+      if (e.code === 'Space') { isSpaceDown = false; document.body.classList.remove('space-pan'); document.body.style.cursor = '' }
     });
 
     init();
