@@ -990,7 +990,7 @@
     let state = { projects: {}, folders: [{ id: 'work', name: 'Work', order: [], max: WORK_MAX }, { id: 'projects', name: 'Projects', order: [], max: null }], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, selectedLinkId = null, crossLinkFrom = null, dirty = false;
     function allProjectIds() { return state.folders.flatMap(f => f.order) }
     let historyStack = [], historyIndex = -1;
-    let dragMode = null, dragStart = null, dragNodeId = null, dragStartMap = null, justFinishedMarquee = false, panStart = null, isSpaceDown = false, isMDown = false, selectionMode = false;
+    let dragMode = null, dragStart = null, dragNodeId = null, dragStartMap = null, justFinishedMarquee = false, panStart = null, isSpaceDown = false, selectionMode = false;
 
     function activeProject() { return state.projects[state.activeProjectId] }
     function activePage() { const p = activeProject(); return p ? p.pages[p.activePageIndex || 0] : null }
@@ -1298,7 +1298,7 @@
 
         el.onclick = (e) => { e.stopPropagation(); if (crossLinkFrom && crossLinkFrom !== node.id) makeCrossLink(crossLinkFrom, node.id) };
         el.onmousedown = (e) => {
-          if (selectionMode || isMDown) return; // Prioritize selection mode over node dragging
+          if (selectionMode) return; // Prioritize selection mode over node dragging
           if (e.target === resize || e.target.closest('.details') || e.target.tagName === 'TEXTAREA' || title.contentEditable === 'true') return;
           if (e.metaKey || e.ctrlKey || e.shiftKey) { toggleMulti(node.id); return; }
           if (!selectedIds.has(node.id)) selectOnly(node.id);
@@ -1343,7 +1343,7 @@
 
     els.canvas.onmousedown = (e) => {
       // Allow selection mode to ignore UI blocks
-      if (!selectionMode && !isMDown) {
+      if (!selectionMode) {
         if (e.target.closest('.node') || e.target.closest('#sidebar') || e.target.closest('#toolbar') || e.target.closest('#floatingZoom') || e.target.closest('#sidebarToggle')) return;
       }
       // Middle mouse button (1) or Right mouse button (2) = pan
@@ -1354,8 +1354,8 @@
         e.preventDefault();
         return;
       }
-      if (e.metaKey || e.ctrlKey || e.shiftKey || isMDown || selectionMode) {
-        // Selection Mode (Selection tool, M-key, Mac, or Shift modifiers)
+      if (e.metaKey || e.ctrlKey || e.shiftKey || selectionMode) {
+        // Selection Mode (Selection tool, Mac, or Shift modifiers)
         dragMode = 'marquee';
         const p = pointInCanvas(e);
         dragStart = p;
@@ -1712,8 +1712,8 @@
       const editing = document.activeElement && (document.activeElement.contentEditable === 'true' || document.activeElement.tagName === 'TEXTAREA');
       if (e.code === 'Space' && !editing) { isSpaceDown = true; document.body.classList.add('space-pan'); e.preventDefault(); return }
       if ((e.key.toLowerCase() === 'm' || e.code === 'KeyM') && !editing) {
-        if (e.metaKey || e.ctrlKey) { e.preventDefault(); toggleSelectionMode(); }
-        else { isMDown = true; document.body.style.cursor = 'crosshair'; }
+        e.preventDefault();
+        toggleSelectionMode();
         return
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return }
@@ -1726,7 +1726,6 @@
 
     document.addEventListener('keyup', e => {
       if (e.code === 'Space') { isSpaceDown = false; document.body.classList.remove('space-pan'); document.body.style.cursor = '' }
-      if (e.code === 'KeyM') { isMDown = false; document.body.style.cursor = ''; }
     });
 
     init();
