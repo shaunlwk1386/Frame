@@ -1335,6 +1335,7 @@
 
     els.canvas.onmousedown = (e) => {
       if (e.target.closest('.node') || e.target.closest('#sidebar') || e.target.closest('#toolbar') || e.target.closest('#floatingZoom') || e.target.closest('#sidebarToggle')) return;
+      // Middle mouse button = pan
       if (e.button === 1) {
         dragMode = 'pan';
         document.body.style.cursor = 'grabbing';
@@ -1362,23 +1363,29 @@
         }
         e.preventDefault(); return;
       }
-      if (e.shiftKey) {
-        dragMode = 'marquee';
-        const p = pointInCanvas(e);
-        dragStart = p;
-        els.selectionBox.style.display = 'block';
-        els.selectionBox.style.left = (p.x * state.canvasScale + state.viewX) + 'px';
-        els.selectionBox.style.top = (p.y * state.canvasScale + state.viewY) + 'px';
-        els.selectionBox.style.width = '0px';
-        els.selectionBox.style.height = '0px';
-        selectedIds = new Set();
-        selectedNodeId = null;
-        highlightSelection();
+      // Space + drag = pan
+      if (isSpaceDown) {
+        dragMode = 'pan';
+        document.body.style.cursor = 'grabbing';
+        panStart = { x: e.clientX, y: e.clientY, vx: state.viewX || 0, vy: state.viewY || 0 };
         e.preventDefault();
         return;
       }
-      dragMode = 'pending-pan';
-      panStart = { x: e.clientX, y: e.clientY, vx: state.viewX || 0, vy: state.viewY || 0 };
+      // Plain click-drag on empty canvas = marquee select (Shift not required anymore)
+      dragMode = 'marquee';
+      const p = pointInCanvas(e);
+      dragStart = p;
+      els.selectionBox.style.display = 'block';
+      els.selectionBox.style.left = (p.x * state.canvasScale + state.viewX) + 'px';
+      els.selectionBox.style.top = (p.y * state.canvasScale + state.viewY) + 'px';
+      els.selectionBox.style.width = '0px';
+      els.selectionBox.style.height = '0px';
+      if (!e.shiftKey) {
+        selectedIds = new Set();
+        selectedNodeId = null;
+        highlightSelection();
+      }
+      e.preventDefault();
     };
 
     window.addEventListener('mousemove', e => {
@@ -1642,12 +1649,15 @@
         reader.onload = evt => {
           try {
             const d = JSON.parse(evt.target.result);
+            if (!confirm(`Load "${file.name}"? This will replace your current workspace.`)) return;
             state = migrateState(d);
             selectedIds = new Set(); selectedNodeId = null; crossLinkFrom = null;
             pushHistory(); saveLocal(); renderAll();
           } catch (err) { alert('Could not load file.'); console.error(err) }
         };
         reader.readAsText(file);
+        // Reset the file input so the same file can be loaded again if needed
+        e.target.value = '';
       };
       document.getElementById('sidebarToggle').onclick = toggleSidebar;
       document.getElementById('cancelTemplateBtn').onclick = () => document.getElementById('templateDialog').close();
