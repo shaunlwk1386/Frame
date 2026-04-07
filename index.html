@@ -996,7 +996,7 @@
     function snapshot() { return JSON.stringify(state) }
     function pushHistory() { const snap = snapshot(); if (historyStack[historyIndex] === snap) return; historyStack = historyStack.slice(0, historyIndex + 1); historyStack.push(snap); if (historyStack.length > 60) historyStack.shift(); historyIndex = historyStack.length - 1 }
     function undo() { if (historyIndex <= 0) return; historyIndex -= 1; state = JSON.parse(historyStack[historyIndex]); selectedIds = new Set(); selectedNodeId = null; crossLinkFrom = null; saveLocal(); renderAll() }
-    function markDirty() { saveLocal(); }
+    function markDirty() { dirty = true; els.saveState.textContent = 'Unsaved changes'; }
     function saveLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); dirty = false; els.saveState.textContent = 'Saved locally' }
 
     function migrateState(d) {
@@ -1265,7 +1265,7 @@
         title.onclick = (e) => { e.stopPropagation(); if (e.altKey) { selectOnly(node.id); zoomToNode(node); } else if (e.shiftKey || e.metaKey || e.ctrlKey) { toggleMulti(node.id); } else { selectOnly(node.id); } };
         title.ondblclick = (e) => { e.stopPropagation(); selectOnly(node.id); title.contentEditable = 'true'; el.classList.add('editing'); title.focus() };
         title.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') { document.execCommand('insertLineBreak'); e.preventDefault(); } };
-        title.onblur = () => { title.contentEditable = 'false'; el.classList.remove('editing'); node.title = title.innerText.replace(/\n+$/, ''); autoSizeNode(node); pushHistory(); markDirty(); renderCanvas() };
+        title.onblur = () => { title.contentEditable = 'false'; el.classList.remove('editing'); node.title = title.innerText.replace(/\n+$/, ''); autoSizeNode(node); pushHistory(); markDirty(); saveLocal(); renderCanvas() };
         title.oninput = () => { node.title = title.innerText; autoSizeNode(node); markDirty() };
 
         const bar = document.createElement('div');
@@ -1324,68 +1324,52 @@
     }
 
     els.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
       if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
+        // Zoom
         const delta = -e.deltaY * 0.001;
         const oldScale = state.canvasScale || 1;
         state.canvasScale = Math.min(2.5, Math.max(0.5, oldScale + delta));
-        renderCanvas();
+      } else {
+        // Pan (Trackpad scroll)
+        state.viewX = (state.viewX || 0) - e.deltaX;
+        state.viewY = (state.viewY || 0) - e.deltaY;
       }
+      renderCanvas();
     }, { passive: false });
 
     els.canvas.onmousedown = (e) => {
       if (e.target.closest('.node') || e.target.closest('#sidebar') || e.target.closest('#toolbar') || e.target.closest('#floatingZoom') || e.target.closest('#sidebarToggle')) return;
-      // Middle mouse button = pan
-      if (e.button === 1) {
+      // Middle mouse button (1) or Right mouse button (2) = pan
+      if (e.button === 1 || e.button === 2) {
         dragMode = 'pan';
         document.body.style.cursor = 'grabbing';
         panStart = { x: e.clientX, y: e.clientY, vx: state.viewX || 0, vy: state.viewY || 0 };
         e.preventDefault();
         return;
       }
-      if (e.metaKey || e.ctrlKey) { zoomReset(); e.preventDefault(); return; }
-      if (e.altKey) {
-        if (preZoomState) {
-          const from = { scale: state.canvasScale || 1, viewX: state.viewX || 0, viewY: state.viewY || 0 };
-          const to = preZoomState;
-          preZoomState = null;
-          const duration = 300, start = performance.now();
-          function ease(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t }
-          function step(now) {
-            const t = Math.min((now - start) / duration, 1), e2 = ease(t);
-            state.canvasScale = from.scale + (to.scale - from.scale) * e2;
-            state.viewX = from.viewX + (to.viewX - from.viewX) * e2;
-            state.viewY = from.viewY + (to.viewY - from.viewY) * e2;
-            renderCanvas();
-            if (t < 1) requestAnimationFrame(step);
-          }
-          requestAnimationFrame(step);
+      if (e.metaKey || e.ctrlKey || e.shiftKey) {
+        // Selection Mode (Mac/Standard modifiers)
+        dragMode = 'marquee';
+        const p = pointInCanvas(e);
+        dragStart = p;
+        els.selectionBox.style.display = 'block';
+        els.selectionBox.style.left = (p.x * state.canvasScale + state.viewX) + 'px';
+        els.selectionBox.style.top = (p.y * state.canvasScale + state.viewY) + 'px';
+        els.selectionBox.style.width = '0px';
+        els.selectionBox.style.height = '0px';
+        if (!e.shiftKey) {
+          selectedIds = new Set();
+          selectedNodeId = null;
+          highlightSelection();
         }
-        e.preventDefault(); return;
-      }
-      // Space + drag = pan
-      if (isSpaceDown) {
-        dragMode = 'pan';
-        document.body.style.cursor = 'grabbing';
-        panStart = { x: e.clientX, y: e.clientY, vx: state.viewX || 0, vy: state.viewY || 0 };
         e.preventDefault();
         return;
       }
-      // Plain click-drag on empty canvas = marquee select (Shift not required anymore)
-      dragMode = 'marquee';
-      const p = pointInCanvas(e);
-      dragStart = p;
-      els.selectionBox.style.display = 'block';
-      els.selectionBox.style.left = (p.x * state.canvasScale + state.viewX) + 'px';
-      els.selectionBox.style.top = (p.y * state.canvasScale + state.viewY) + 'px';
-      els.selectionBox.style.width = '0px';
-      els.selectionBox.style.height = '0px';
-      if (!e.shiftKey) {
-        selectedIds = new Set();
-        selectedNodeId = null;
-        highlightSelection();
-      }
-      e.preventDefault();
+      
+      // Default: Pan/Move across the page
+      dragMode = 'pending-pan';
+      panStart = { x: e.clientX, y: e.clientY, vx: state.viewX || 0, vy: state.viewY || 0 };
     };
 
     window.addEventListener('mousemove', e => {
@@ -1439,6 +1423,10 @@
       }
     });
 
+    window.addEventListener('contextmenu', e => {
+      if (dragMode === 'pan') e.preventDefault();
+    });
+
     window.addEventListener('mouseup', () => {
       if (!dragMode) return;
       document.body.style.cursor = '';
@@ -1454,6 +1442,9 @@
         setTimeout(() => justFinishedMarquee = false, 60)
       } else {
         pushHistory();
+      }
+      if (dragMode === 'nodes' || dragMode === 'resize' || dragMode === 'marquee') {
+        saveLocal();
       }
       dragMode = null;
       dragStart = null;
