@@ -989,7 +989,7 @@
     let state = { projects: {}, folders: [{ id: 'work', name: 'Work', order: [], max: WORK_MAX }, { id: 'projects', name: 'Projects', order: [], max: null }], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, selectedLinkId = null, crossLinkFrom = null, dirty = false;
     function allProjectIds() { return state.folders.flatMap(f => f.order) }
     let historyStack = [], historyIndex = -1;
-    let dragMode = null, dragStart = null, dragNodeId = null, dragStartMap = null, justFinishedMarquee = false, panStart = null, isSpaceDown = false;
+    let dragMode = null, dragStart = null, dragNodeId = null, dragStartMap = null, justFinishedMarquee = false, panStart = null, isSpaceDown = false, isMDown = false;
 
     function activeProject() { return state.projects[state.activeProjectId] }
     function activePage() { const p = activeProject(); return p ? p.pages[p.activePageIndex || 0] : null }
@@ -1349,8 +1349,8 @@
         e.preventDefault();
         return;
       }
-      if (e.metaKey || e.ctrlKey || e.shiftKey) {
-        // Selection Mode (Mac/Standard modifiers)
+      if (e.metaKey || e.ctrlKey || e.shiftKey || isMDown) {
+        // Selection Mode (M-key, Mac, or Shift modifiers)
         dragMode = 'marquee';
         const p = pointInCanvas(e);
         dragStart = p;
@@ -1693,6 +1693,7 @@
     document.addEventListener('keydown', e => {
       const editing = document.activeElement && (document.activeElement.contentEditable === 'true' || document.activeElement.tagName === 'TEXTAREA');
       if (e.code === 'Space' && !editing) { isSpaceDown = true; document.body.classList.add('space-pan'); e.preventDefault(); return }
+      if (e.key.toLowerCase() === 'm' && !editing) { isMDown = true; return }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return }
       const page = activePage(); if (!page) return;
       const selected = page.nodes.find(n => n.id === selectedNodeId); if (!selected) return;
@@ -1703,6 +1704,7 @@
 
     document.addEventListener('keyup', e => {
       if (e.code === 'Space') { isSpaceDown = false; document.body.classList.remove('space-pan'); document.body.style.cursor = '' }
+      if (e.key.toLowerCase() === 'm') { isMDown = false; }
     });
 
     init();
