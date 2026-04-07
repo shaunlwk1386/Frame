@@ -996,7 +996,7 @@
     function snapshot() { return JSON.stringify(state) }
     function pushHistory() { const snap = snapshot(); if (historyStack[historyIndex] === snap) return; historyStack = historyStack.slice(0, historyIndex + 1); historyStack.push(snap); if (historyStack.length > 60) historyStack.shift(); historyIndex = historyStack.length - 1 }
     function undo() { if (historyIndex <= 0) return; historyIndex -= 1; state = JSON.parse(historyStack[historyIndex]); selectedIds = new Set(); selectedNodeId = null; crossLinkFrom = null; saveLocal(); renderAll() }
-    function markDirty() { dirty = true; els.saveState.textContent = 'Unsaved changes' }
+    function markDirty() { saveLocal(); }
     function saveLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); dirty = false; els.saveState.textContent = 'Saved locally' }
 
     function migrateState(d) {
