@@ -744,6 +744,43 @@
       cursor: default
     }
 
+    #bottomBar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      z-index: 999
+    }
+    #bottomBarToggle {
+      all: unset;
+      cursor: pointer;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 999px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+      color: #444
+    }
+    #bottomBarToggle:hover { background: #f9f9f9; color: var(--accent) }
+    #bottomBarTools {
+      display: none;
+      gap: 6px;
+      padding: 8px 12px;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,0.10);
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.10)
+    }
+    #bottomBarTools.open { display: flex }
+
+    .folder-collapsed > .tab { display: none }
+
     .folder-header {
       display: flex;
       align-items: center;
@@ -924,6 +961,7 @@
       <button class="btn" id="selectModeBtn" title="Selection Mode (Cmd+M)">Selection Tool</button>
       <div class="spacer"></div>
       <small id="saveState" style="color:var(--muted);font-weight:600">Saved locally</small>
+      <button class="btn" id="refreshBtn" title="Refresh" style="margin-left:8px">↺ Refresh</button>
     </div>
     <div id="main">
       <div id="canvas">
@@ -933,6 +971,13 @@
         </div>
         <div id="selectionBox"></div>
         <div id="measurer"></div>
+        <div id="bottomBar">
+          <button id="bottomBarToggle" title="Canvas Tools">⚙ Canvas</button>
+          <div id="bottomBarTools">
+            <button class="btn" id="showAllDetailsBtn">Show All Details</button>
+            <button class="btn" id="hideAllDetailsBtn">Hide All Details</button>
+          </div>
+        </div>
         <div id="floatingZoom">
           <button class="btn" id="zoomOutBtn" title="Zoom Out">-</button>
           <button class="btn" id="zoomResetBtn" title="Reset Zoom">Reset</button>
@@ -1153,12 +1198,17 @@
     function renderTabs() {
       els.tabs.innerHTML = '';
       state.folders.forEach(folder => {
+        if (folder.collapsed == null) folder.collapsed = false;
+        const folderWrap = document.createElement('div');
+        folderWrap.className = 'folder-wrap' + (folder.collapsed ? ' folder-collapsed' : '');
         const header = document.createElement('div');
         header.className = 'folder-header';
         const countLabel = folder.max !== null ? `${folder.order.length}/${folder.max}` : `${folder.order.length}`;
-        header.innerHTML = `<span>${escapeHtml(folder.name)} <span class="folder-count">${countLabel}</span></span><button class="new-in-folder" title="New project in ${escapeHtml(folder.name)}">+</button>`;
+        const chevron = folder.collapsed ? '▶' : '▼';
+        header.innerHTML = `<span style="cursor:pointer;flex:1">${chevron} ${escapeHtml(folder.name)} <span class="folder-count">${countLabel}</span></span><button class="new-in-folder" title="New project in ${escapeHtml(folder.name)}">+</button>`;
+        header.querySelector('span').onclick = () => { folder.collapsed = !folder.collapsed; saveLocal(); renderTabs() };
         header.querySelector('button').onclick = () => openTemplateDialog(true, folder.id);
-        els.tabs.appendChild(header);
+        folderWrap.appendChild(header);
         folder.order.forEach(id => {
           const p = state.projects[id];
           if (!p) return;
@@ -1192,8 +1242,9 @@
             saveLocal();
             renderAll()
           };
-          els.tabs.appendChild(tab);
+          folderWrap.appendChild(tab);
         });
+        els.tabs.appendChild(folderWrap);
       });
       renderPageTabs();
     }
@@ -1792,6 +1843,21 @@
       document.getElementById('zoomResetBtn').onclick = zoomReset;
       document.getElementById('saveFileBtn').onclick = saveFile;
       document.getElementById('selectModeBtn').onclick = toggleSelectionMode;
+      document.getElementById('refreshBtn').onclick = () => {
+        els.saveState.textContent = 'Checking for new entries...';
+        setTimeout(() => location.reload(), 1200);
+      };
+      document.getElementById('bottomBarToggle').onclick = () => {
+        document.getElementById('bottomBarTools').classList.toggle('open');
+      };
+      document.getElementById('showAllDetailsBtn').onclick = () => {
+        activePage().nodes.forEach(n => n.detailsOpen = true);
+        pushHistory(); markDirty(); renderCanvas();
+      };
+      document.getElementById('hideAllDetailsBtn').onclick = () => {
+        activePage().nodes.forEach(n => n.detailsOpen = false);
+        pushHistory(); markDirty(); renderCanvas();
+      };
       document.getElementById('loadFileBtn').onclick = () => document.getElementById('fileInput').click();
       document.getElementById('fileInput').onchange = e => {
         const file = e.target.files[0]; if (!file) return;
