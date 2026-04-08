@@ -875,24 +875,27 @@
     }
 
     .node-tick {
+      display: none;
       position: absolute;
-      top: 4px;
-      right: 4px;
+      top: 50%;
+      left: calc(100% + 8px);
+      transform: translateY(-50%);
       width: 20px;
       height: 20px;
-      border-radius: 50%;
-      border: 1.5px solid var(--t-strong);
-      background: transparent;
+      border-radius: 4px;
+      border: 2px solid #aaa;
+      background: #fff;
       cursor: pointer;
-      display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 11px;
+      font-size: 13px;
       color: transparent;
       transition: all 120ms ease;
-      z-index: 10
+      z-index: 10;
+      flex-shrink: 0
     }
-    .node-tick:hover { background: var(--t-base); color: var(--t-deep) }
+    .node.is-task .node-tick { display: flex }
+    .node-tick:hover { border-color: #22c55e }
     .node.done .node-tick { background: #22c55e; border-color: #16a34a; color: #fff }
     .node.done .title { opacity: 0.45; text-decoration: line-through }
 
@@ -933,22 +936,23 @@
       display: none;
       align-items: center;
       justify-content: center;
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
-      border: 1.5px solid var(--t-strong);
-      background: transparent;
+      border: 1.5px solid #aaa;
+      background: #fff;
       cursor: pointer;
-      font-size: 11px;
-      color: var(--t-deep);
+      font-size: 12px;
+      color: #444;
       position: absolute;
-      top: 4px;
-      left: 4px;
+      top: -10px;
+      right: -10px;
       text-decoration: none;
-      z-index: 10
+      z-index: 20;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12)
     }
     .node.has-url .node-url-btn { display: flex }
-    .node-url-btn:hover { background: var(--t-base) }
+    .node-url-btn:hover { background: #f0f7ff; border-color: var(--accent); color: var(--accent) }
   </style>
 </head>
 
@@ -1116,7 +1120,7 @@
       }
     };
     function uid() { return Math.random().toString(36).slice(2, 10) }
-    function makeNode(title, x, y) { return { id: uid(), title, x, y, w: 120, h: 54, theme: 'neutral', themeIntensity: null, shape: 'oval', fontSize: 12, fontColor: null, textAlign: 'center', details: '', detailsOpen: false, detailsWidth: 170, detailsHeight: 132, done: false, url: '', linkedProjects: [], detailsSide: 'bottom' } }
+    function makeNode(title, x, y) { return { id: uid(), title, x, y, w: 120, h: 54, theme: 'neutral', themeIntensity: null, shape: 'oval', fontSize: 12, fontColor: null, textAlign: 'center', details: '', detailsOpen: false, detailsWidth: 170, detailsHeight: 132, done: false, isTask: false, url: '', linkedProjects: [], detailsSide: 'bottom' } }
     function linked(rootTitle, items) { const root = makeNode(rootTitle, 220, 180), nodes = [root], links = []; items.forEach((t, i) => { const n = makeNode(t, 500 + (i % 2) * 140, 90 + i * 86); nodes.push(n); links.push({ id: uid(), from: root.id, to: n.id }) }); return { nodes, links } }
     const els = { tabs: document.getElementById('tabs'), pageTabs: document.getElementById('pageTabs'), nodes: document.getElementById('nodes'), links: document.getElementById('links'), canvas: document.getElementById('canvas'), map: document.getElementById('map'), selectionBox: document.getElementById('selectionBox'), saveState: document.getElementById('saveState'), fileInput: document.getElementById('fileInput'), measurer: document.getElementById('measurer') };
     let state = { projects: {}, folders: [{ id: 'work', name: 'Work', order: [], max: WORK_MAX }, { id: 'projects', name: 'Projects', order: [], max: null }], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, selectedLinkId = null, crossLinkFrom = null, dirty = false;
@@ -1161,6 +1165,7 @@
             if (n.detailsHeight == null) n.detailsHeight = 132;
             if (!n.theme) n.theme = 'neutral';
             if (n.done == null) n.done = false;
+            if (n.isTask == null) n.isTask = false;
             if (n.url == null) n.url = '';
             if (!n.linkedProjects) n.linkedProjects = [];
             if (!n.detailsSide) n.detailsSide = 'bottom';
@@ -1393,7 +1398,8 @@
 
         const doneClass = node.done ? ' done' : '';
         const urlClass = node.url ? ' has-url' : '';
-        el.className = `node ${node.theme || 'neutral'} ${intensity} ${fontClass} ${node.shape || 'oval'}${doneClass}${urlClass}` + ((selectedIds.has(node.id) || node.id === selectedNodeId) ? ' selected' : '');
+        const taskClass = node.isTask ? ' is-task' : '';
+        el.className = `node ${node.theme || 'neutral'} ${intensity} ${fontClass} ${node.shape || 'oval'}${doneClass}${urlClass}${taskClass}` + ((selectedIds.has(node.id) || node.id === selectedNodeId) ? ' selected' : '');
         el.dataset.id = node.id;
         el.style.left = node.x + 'px';
         el.style.top = node.y + 'px';
@@ -1416,13 +1422,15 @@
 
         const bar = document.createElement('div');
         bar.className = 'nodebar';
-        bar.innerHTML = '<button class="iconbtn" title="Add child">+</button><button class="iconbtn" title="Toggle details">▾</button><button class="iconbtn" title="Cross-link">↔</button><button class="iconbtn" title="Link to project">⊞</button><button class="iconbtn" title="Delete">×</button>';
+        const taskLabel = node.isTask ? '☑' : '☐';
+        bar.innerHTML = `<button class="iconbtn" title="Add child">+</button><button class="iconbtn" title="Toggle details">▾</button><button class="iconbtn" title="Cross-link">↔</button><button class="iconbtn" title="Link to project">⊞</button><button class="iconbtn" title="${node.isTask ? 'Remove task' : 'Mark as task'}">${taskLabel}</button><button class="iconbtn" title="Delete">×</button>`;
         const bs = bar.querySelectorAll('button');
         bs[0].onclick = (e) => { e.stopPropagation(); addChild(node.id, 1) };
         bs[1].onclick = (e) => { e.stopPropagation(); toggleDetails(node.id) };
         bs[2].onclick = (e) => { e.stopPropagation(); const arr = getSelectedNodes(); if (arr.length > 1) linkSelectedChain(); else startCrossLink(node.id) };
         bs[3].onclick = (e) => { e.stopPropagation(); openProjectLinkPicker(node.id) };
-        bs[4].onclick = (e) => { e.stopPropagation(); deleteSelected() };
+        bs[4].onclick = (e) => { e.stopPropagation(); node.isTask = !node.isTask; if (!node.isTask) node.done = false; markDirty(); saveLocal(); renderCanvas() };
+        bs[5].onclick = (e) => { e.stopPropagation(); deleteSelected() };
 
         // Tick button
         const tick = document.createElement('button');
@@ -1479,8 +1487,9 @@
 
         el.onclick = (e) => { e.stopPropagation(); if (crossLinkFrom && crossLinkFrom !== node.id) makeCrossLink(crossLinkFrom, node.id) };
         el.onmousedown = (e) => {
-          if (selectionMode) return; // Prioritize selection mode over node dragging
+          if (selectionMode) return;
           if (e.target === resize || e.target.closest('.details') || e.target.tagName === 'TEXTAREA' || title.contentEditable === 'true') return;
+          if (e.target.closest('.node-url-btn') || e.target.closest('.node-tick')) return;
           if (e.metaKey || e.ctrlKey || e.shiftKey) { toggleMulti(node.id); return; }
           if (!selectedIds.has(node.id)) selectOnly(node.id);
           dragMode = 'nodes';
