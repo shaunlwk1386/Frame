@@ -642,8 +642,6 @@
 
     .details {
       position: absolute;
-      left: 0;
-      top: calc(100% + 16px);
       display: none;
       background: #fff;
       border: 1px solid var(--line);
@@ -1055,6 +1053,15 @@
                 </div>
               </div>
               <div class="sidebar-section" style="margin-top:12px">
+                <div class="label">Details Position</div>
+                <select class="select" id="detailsSidePicker" style="width:100%;margin-top:4px">
+                  <option value="bottom">Bottom</option>
+                  <option value="top">Top</option>
+                  <option value="right">Right</option>
+                  <option value="left">Left</option>
+                </select>
+              </div>
+              <div class="sidebar-section" style="margin-top:12px">
                 <div class="label">Hyperlink URL</div>
                 <input type="url" class="input" id="nodeUrlInput" placeholder="https://..." style="width:100%;margin-top:4px">
               </div>
@@ -1109,7 +1116,7 @@
       }
     };
     function uid() { return Math.random().toString(36).slice(2, 10) }
-    function makeNode(title, x, y) { return { id: uid(), title, x, y, w: 120, h: 54, theme: 'neutral', themeIntensity: null, shape: 'oval', fontSize: 12, fontColor: null, textAlign: 'center', details: '', detailsOpen: false, detailsWidth: 170, detailsHeight: 132, done: false, url: '', linkedProjects: [] } }
+    function makeNode(title, x, y) { return { id: uid(), title, x, y, w: 120, h: 54, theme: 'neutral', themeIntensity: null, shape: 'oval', fontSize: 12, fontColor: null, textAlign: 'center', details: '', detailsOpen: false, detailsWidth: 170, detailsHeight: 132, done: false, url: '', linkedProjects: [], detailsSide: 'bottom' } }
     function linked(rootTitle, items) { const root = makeNode(rootTitle, 220, 180), nodes = [root], links = []; items.forEach((t, i) => { const n = makeNode(t, 500 + (i % 2) * 140, 90 + i * 86); nodes.push(n); links.push({ id: uid(), from: root.id, to: n.id }) }); return { nodes, links } }
     const els = { tabs: document.getElementById('tabs'), pageTabs: document.getElementById('pageTabs'), nodes: document.getElementById('nodes'), links: document.getElementById('links'), canvas: document.getElementById('canvas'), map: document.getElementById('map'), selectionBox: document.getElementById('selectionBox'), saveState: document.getElementById('saveState'), fileInput: document.getElementById('fileInput'), measurer: document.getElementById('measurer') };
     let state = { projects: {}, folders: [{ id: 'work', name: 'Work', order: [], max: WORK_MAX }, { id: 'projects', name: 'Projects', order: [], max: null }], activeProjectId: null, settings: { linkMode: 'side' } }, selectedIds = new Set(), selectedNodeId = null, selectedLinkId = null, crossLinkFrom = null, dirty = false;
@@ -1156,6 +1163,7 @@
             if (n.done == null) n.done = false;
             if (n.url == null) n.url = '';
             if (!n.linkedProjects) n.linkedProjects = [];
+            if (!n.detailsSide) n.detailsSide = 'bottom';
           });
         });
       });
@@ -1451,6 +1459,11 @@
         details.className = 'details' + (node.detailsOpen ? ' open' : '');
         details.style.width = (node.detailsWidth || 170) + 'px';
         details.style.height = (node.detailsHeight || 132) + 'px';
+        const side = node.detailsSide || 'bottom';
+        if (side === 'bottom') { details.style.left = '0'; details.style.top = 'calc(100% + 16px)'; }
+        else if (side === 'top') { details.style.left = '0'; details.style.bottom = 'calc(100% + 16px)'; }
+        else if (side === 'right') { details.style.left = 'calc(100% + 16px)'; details.style.top = '0'; }
+        else if (side === 'left') { details.style.right = 'calc(100% + 16px)'; details.style.top = '0'; }
         details.innerHTML = '<div class="label" style="margin-bottom:6px">Details</div><div class="details-toolbar"><button data-cmd="bold" title="Bold"><b>B</b></button><button data-cmd="italic" title="Italic"><i>I</i></button><button data-cmd="underline" title="Underline"><u>U</u></button></div><div class="details-editor" contenteditable="true" placeholder="Notes..."></div><div class="details-resize"></div>';
         const editor = details.querySelector('.details-editor');
         const detailsResize = details.querySelector('.details-resize');
@@ -1681,11 +1694,12 @@
         });
       }
 
-      const shapePicker = document.getElementById('shapePicker'), sizeInput = document.getElementById('fontSizeInput'), alignPicker = document.getElementById('textAlignPicker'), linePicker = document.getElementById('lineThicknessPicker'), urlInput = document.getElementById('nodeUrlInput');
+      const shapePicker = document.getElementById('shapePicker'), sizeInput = document.getElementById('fontSizeInput'), alignPicker = document.getElementById('textAlignPicker'), linePicker = document.getElementById('lineThicknessPicker'), urlInput = document.getElementById('nodeUrlInput'), detailsSidePicker = document.getElementById('detailsSidePicker');
       if (shapePicker) shapePicker.value = selected.shape || 'oval';
       if (sizeInput) sizeInput.value = selected.fontSize || 12;
       if (alignPicker) alignPicker.value = selected.textAlign || 'center';
       if (urlInput) urlInput.value = selected.url || '';
+      if (detailsSidePicker) detailsSidePicker.value = selected.detailsSide || 'bottom';
       if (linePicker) {
         const connectedLinks = page.links.filter(l => l.from === selected.id || l.to === selected.id);
         linePicker.value = connectedLinks.length ? (connectedLinks[0].thickness || 1.5) : 1.5;
@@ -1695,6 +1709,7 @@
       sizeInput.onchange = e => applyToSelection(n => n.fontSize = parseInt(e.target.value));
       alignPicker.onchange = e => applyToSelection(n => n.textAlign = e.target.value);
       if (urlInput) urlInput.onchange = e => { selected.url = e.target.value.trim(); markDirty(); saveLocal(); renderCanvas() };
+      if (detailsSidePicker) detailsSidePicker.onchange = e => applyToSelection(n => n.detailsSide = e.target.value);
       linePicker.onchange = e => {
         const val = parseFloat(e.target.value);
         const arr = getSelectedNodes();
